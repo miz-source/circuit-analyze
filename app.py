@@ -9,39 +9,37 @@ import json
 import os
 import requests
 import re
-from PIL import Image
 import datetime
 
 # -----------------------------------------------------------------------------
-# 1. ページ基本設定 (ノートPC表示最適化)
+# 1. ページ基本設定
 # -----------------------------------------------------------------------------
 st.set_page_config(
     page_title="CIRCUIT ANALYZE ver1.0",
-    page_icon="🏁",
+    page_icon="⏱️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # -----------------------------------------------------------------------------
-# 2. 多言語辞書 (日本語 ⇔ English 完全対応)
+# 2. 多言語辞書
 # -----------------------------------------------------------------------------
 LANG_DICT = {
     "日本語": {
         "title_sub": "高精度テレメトリー ＆ ダイナミクス比較解析システム",
-        "theme_select": "システムUIテーマ選択",
+        "theme_select": "画面表示UIテーマ",
         "config_assets": "設定 ＆ アセット読み込み",
-        "saved_config": "保存済み設定ファイル (.json)",
+        "saved_config": "保存済み設定ファイル (.json - 任意)",
         "config_loaded": "設定ファイルを読み込みました",
         "config_failed": "設定ファイルのパースに失敗しました",
-        "telemetry_file": "走行データ (複数選択可: .bnx4 / .dtb / .csv)",
-        "circuit_pth": "🏁 コース形状データ (.pth)",
+        "telemetry_file": "走行データ (複数選択可: .bnx / .bnx4 / .dtb / .csv)",
+        "circuit_pth": "コース形状データ (.pth - 任意)",
         "circuit_bg": "サーキット背景画像 (.png / .jpg)",
-        "geojson_file": "国土地理院/GeoJSON コース幅データ",
         "render_style": "描画背景タイプ",
         "track_width": "想定コース幅 (ピクセル)",
         "track_opacity": "想定コース透明度",
-        "track_shift_x": "コース位置 X (東西シフト)",
-        "track_shift_y": "コース位置 Y (南北シフト)",
+        "track_shift_x": "全体コース位置 X (東西シフト)",
+        "track_shift_y": "全体コース位置 Y (南北シフト)",
         "north_rotation": "北基準回転角度 (°)",
         "bg_shift": "コース図面画像の位置・比率調整 (整数単位)",
         "offset_x": "位置 X (東西)",
@@ -49,41 +47,51 @@ LANG_DICT = {
         "scale_x": "横幅倍率 (Scale X)",
         "scale_y": "縦幅倍率 (Scale Y)",
         "opacity": "透明度",
-        "min_pts": "1周の最低データ点数",
-        "auto_gps": "🎯 コース全体基準 GPS高精度ズレ補正",
-        "select_session": "解析対象の走行グループを選択:",
-        "visual_start": "スタート位置を目視で調整する",
-        "start_slider": "コース上のサンプルポイント位置",
-        "filter_laps": "🗑️ 不要なLAPを選択して除外（削除）:",
-        "compare_laps": "📊 比較ラップ選択 (最大10周まで選択可能)",
-        "export_btn": "💾 現在のコース・名前設定をファイルに保存する",
-        "braking_points": "🔴🟢 強調ブレーキ/アクセルON ポイント表示",
+        "min_pts": "1周の最低データ点数 (誤分割防止ガード)",
+        "map_height_label": "コースマップ描画高さ (px)",
+        "auto_gps": "GPS軌跡・コース重心自動フィット補正",
+        "reset_gps": "GPS補正をリセット",
+        "select_session": "解析対象の走行グループを選択 (複数可):",
+        "saved_laps_select": "保存済みキープLAPから読み込み・比較:",
+        "visual_start": "スタート位置の微調整",
+        "start_candidate_label": "1. スタートラインの候補地を選択:",
+        "start_offset_label": "2. 前後微調整 (メートル):",
+        "marker_text_size": "走行マシン表示テキストサイズ (px)",
+        "filter_laps": "不要なLAPを選択して除外（削除）:",
+        "compare_laps": "比較ラップ選択 (速い順にソート表示):",
+        "export_btn": "現在のコース・名前設定をファイルに保存する",
+        "braking_points": "ブレーキ強調",
+        "toggle_hud": "HUD非表示",
+        "line_color_mode": "描画カラー:",
+        "view_mode": "表示モード:",
+        "zoom_sub": "追従ズーム・サブウィンドウ表示",
         "trace_axis": "グラフ比較軸:",
-        "replay_speed": "同期再生速度:",
-        "main_analysis": "🏁 メイン走行ライン解析",
-        "start_time": "開始時刻",
-        "hud_title": "選択ラップ HUD & 傾きインジケーター",
-        "sub_compare": "📺 併設比較周",
-        "bank_angle": "🏍️ バイク傾き (bike.png バンク角)",
-        "seek_time": "再生シーン連動 (各ラップバンク角同期)",
-        "speed_traces": "📈 車速 ＆ アクセル/ブレーキ状態トレース",
-        "drop_info": "左側のサイドバーから .bnx4 / .dtb / .csv ログファイルをドロップしてください。",
+        "replay_speed": "再生速度:",
+        "main_analysis": "メイン走行ライン解析",
+        "hud_title": "HUD & バンク角分析",
+        "sub_compare": "併設比較周",
+        "bank_angle": "バイク傾き (リアルタイム バンク角)",
+        "speed_traces": "車速 ＆ アクセル/ブレーキ状態トレース",
+        "delta_traces": "デルタタイム (ベストラップとのタイム差: 秒)",
+        "gg_diagram": "G-G Diagram (縦G vs 横G 摩擦サークル解析)",
+        "sector_analysis": "セクター分割 ＆ テレメトリー詳細分析 (S1 / S2 / S3 / ペダル率 / V-max)",
+        "drop_info": "左側のサイドバーから .bnx / .bnx4 / .dtb / .csv 走行ログをドロップしてください。",
         "dist_m": "走行距離 (m)",
         "time_s": "経過時間 (秒)",
         "speed_kmh": "車速 (km/h)",
-        "lean_deg": "バンク角"
+        "lean_deg": "バンク角",
+        "report_export": "全テレメトリー比較レポート (CSV) をダウンロード"
     },
     "English": {
         "title_sub": "HIGH-PRECISION TELEMETRY & DYNAMICS ANALYZER",
-        "theme_select": "SYSTEM THEME SELECT",
+        "theme_select": "SYSTEM UI THEME",
         "config_assets": "CONFIG & ASSETS",
-        "saved_config": "Saved Config (.json)",
+        "saved_config": "Saved Config (.json - Optional)",
         "config_loaded": "Config Loaded Successfully",
         "config_failed": "Failed to Parse Config File",
-        "telemetry_file": "Telemetry Data (Multiple: .bnx4/.dtb/.csv)",
-        "circuit_pth": "🏁 Circuit Path Data (.pth)",
+        "telemetry_file": "Telemetry Data (Multiple: .bnx/.bnx4/.dtb/.csv)",
+        "circuit_pth": "Circuit Path Data (.pth - Optional)",
         "circuit_bg": "Circuit Track Image (.png / .jpg)",
-        "geojson_file": "GeoJSON Track Width File",
         "render_style": "Track Render Style",
         "track_width": "Track Width (px)",
         "track_opacity": "Track Opacity",
@@ -96,82 +104,89 @@ LANG_DICT = {
         "scale_x": "Scale X",
         "scale_y": "Scale Y",
         "opacity": "Opacity",
-        "min_pts": "Min Lap Points",
-        "auto_gps": "Whole Track Global Alignment",
-        "select_session": "Select Session:",
-        "visual_start": "Visual Start Line Adjust",
-        "start_slider": "Start Line Sample Point",
-        "filter_laps": "🗑️ Select Unwanted Laps to Exclude (Remove):",
-        "compare_laps": "SELECT LAPS TO COMPARE (MAX 10 LAPS)",
+        "min_pts": "Min Lap Points Guard",
+        "map_height_label": "Map Render Height (px)",
+        "auto_gps": "Auto Centroid Course Alignment",
+        "reset_gps": "Reset GPS Alignment",
+        "select_session": "Select Session Groups (Multiple):",
+        "saved_laps_select": "Load & Compare Saved Kept Laps:",
+        "visual_start": "Start Line Candidate & Meter Offset Adjust",
+        "start_candidate_label": "1. Select Start Candidate Location:",
+        "start_offset_label": "2. Fine-tune Position (Meters):",
+        "marker_text_size": "Bike Marker Text Size (px)",
+        "filter_laps": "Select Unwanted Laps to Exclude (Remove):",
+        "compare_laps": "SELECT LAPS TO COMPARE:",
         "export_btn": "EXPORT CONFIG FILE (.JSON)",
-        "braking_points": "Enhanced Braking Points (🔴)",
+        "braking_points": "Enhanced Braking Points",
+        "toggle_hud": "Hide HUD Panel",
+        "line_color_mode": "Trace Color Mode:",
+        "view_mode": "View Mode:",
+        "zoom_sub": "Follow Zoom Sub-Window",
         "trace_axis": "Trace Axis:",
         "replay_speed": "Replay Speed:",
         "main_analysis": "MAIN LAP TRACE ANALYSIS",
-        "start_time": "Start Time",
-        "hud_title": "SELECT LAPS HUD & LEAN SENSOR",
+        "hud_title": "HUD & LEAN ANALYZER",
         "sub_compare": "SUB COMPARE",
         "bank_angle": "DYNAMICS (BANK ANGLE)",
-        "seek_time": "SEEK TIME (LEAN SENSOR)",
         "speed_traces": "TELEMETRY SPEED TRACES",
-        "drop_info": "DROP .BNX4, .DTB, OR .CSV TELEMETRY FILES FROM SIDEBAR.",
+        "delta_traces": "DELTA TIME (vs Best Lap: Sec)",
+        "gg_diagram": "G-G DIAGRAM (G-Circle Analysis)",
+        "sector_analysis": "SECTOR ANALYSIS & TELEMETRY REPORT",
+        "drop_info": "DROP .BNX, .BNX4, .DTB, OR .CSV TELEMETRY FILES FROM SIDEBAR.",
         "dist_m": "Distance (m)",
         "time_s": "Time (s)",
         "speed_kmh": "Speed (km/h)",
-        "lean_deg": "Lean"
+        "lean_deg": "Lean",
+        "report_export": "Export Full Telemetry Report (CSV)"
     }
 }
 
 THEMES = {
-    "Cyber Matrix 2.0": {
+    "Dark (夜間解析用)": {
         "bg_app": "#040806", "bg_panel": "#09120e", "bg_card": "#0d1a14",
-        "border": "#1b3a2b", "text": "#e2e8f0", "accent": "#00ff66", "best": "#00ff66",
+        "border": "#1b3a2b", "text": "#e2e8f0", "subtext": "#94a3b8", "accent": "#00ff66", "pth_line": "rgba(160, 180, 200, 0.5)",
         "plot_bg": "#06110b", "grid": "#13281c",
+        "drop_bg": "#14231b", "drop_border": "#27543d",
         "colors": ["#00f2fe", "#ff2a5f", "#00ff88", "#ffb703", "#a855f7", "#00ff66", "#f43f5e", "#06b6d4", "#eab308", "#ec4899"]
     },
-    "F1 Telemetry Carbon": {
-        "bg_app": "#08080a", "bg_panel": "#101014", "bg_card": "#16161c",
-        "border": "#232332", "text": "#f1f5f9", "accent": "#00f2fe", "best": "#00ff88",
-        "plot_bg": "#0a0a0f", "grid": "#1a1a28",
-        "colors": ["#00f2fe", "#ff2a5f", "#00ff88", "#ffb703", "#e0e6ed", "#a855f7", "#f43f5e", "#38bdf8", "#facc15", "#c084fc"]
+    "High Contrast (日中日陰用)": {
+        "bg_app": "#ffffff", "bg_panel": "#f1f5f9", "bg_card": "#e2e8f0",
+        "border": "#94a3b8", "text": "#000000", "subtext": "#334155", "accent": "#1d4ed8", "pth_line": "rgba(15, 23, 42, 0.9)",
+        "plot_bg": "#f8fafc", "grid": "#cbd5e1",
+        "drop_bg": "#e2e8f0", "drop_border": "#64748b",
+        "colors": ["#1d4ed8", "#dc2626", "#15803d", "#c2410c", "#7e22ce", "#0369a1", "#a16207", "#be123c", "#3730a3", "#047857"]
     }
 }
+
+TEXT_POSITIONS = ["top right", "top left", "bottom right", "bottom left", "top center", "bottom center", "middle right", "middle left"]
 
 def ceil_2(val):
     if pd.isna(val) or val is None: return 0.0
     return math.ceil(val * 100.0) / 100.0
 
-def parse_pth_course_file(file_bytes):
-    """コース形状定義ファイル (.pth) 専用パースエンジン"""
+def parse_pth_course_text(content_text):
     paths = []
     try:
-        content = file_bytes.decode('utf-8', errors='ignore')
-        path_blocks = re.findall(r'<path>(.*?)</path>', content, re.DOTALL)
-        if path_blocks:
-            for block in path_blocks:
-                pts = []
-                for line in block.strip().splitlines():
-                    parts = line.strip().split(',')
-                    if len(parts) >= 2:
-                        try:
-                            lon, lat = float(parts[0]), float(parts[1])
-                            pts.append({'lat': lat, 'lon': lon})
-                        except: pass
-                if pts:
-                    paths.append(pd.DataFrame(pts))
-        else:
-            # タグがないプレーンテキストの場合
+        path_blocks = re.findall(r'<path>(.*?)</path>', content_text, re.DOTALL | re.IGNORECASE)
+        if not path_blocks:
+            path_blocks = [content_text]
+
+        for block in path_blocks:
             pts = []
-            for line in content.strip().splitlines():
-                parts = line.strip().split(',')
+            for line in block.strip().splitlines():
+                line_str = line.strip()
+                if not line_str or line_str.startswith('<'): continue
+                parts = line_str.split(',')
                 if len(parts) >= 2:
                     try:
-                        lon, lat = float(parts[0]), float(parts[1])
-                        pts.append({'lat': lat, 'lon': lon})
+                        lon = float(parts[0].strip())
+                        lat = float(parts[1].strip())
+                        if -180.0 <= lon <= 180.0 and -90.0 <= lat <= 90.0:
+                            pts.append({'lat': lat, 'lon': lon})
                     except: pass
-            if pts:
+            if len(pts) >= 2:
                 paths.append(pd.DataFrame(pts))
-    except:
+    except Exception as e:
         pass
     return paths
 
@@ -186,7 +201,8 @@ def decode_extended_float(chunk_10b):
     except:
         return 0.0
 
-def parse_bnx4_binary(data_bytes, end_hour=16, end_minute=35):
+@st.cache_data
+def parse_bnx4_binary_cached(data_bytes):
     records = []
     i = 0
     length = len(data_bytes)
@@ -209,12 +225,11 @@ def parse_bnx4_binary(data_bytes, end_hour=16, end_minute=35):
     df_res = pd.DataFrame(records)
     if not df_res.empty:
         total_pts = len(df_res)
-        end_time_obj = datetime.datetime.now().replace(hour=end_hour, minute=end_minute, second=0, microsecond=0)
-        start_time_obj = end_time_obj - datetime.timedelta(seconds=total_pts * 0.05)
-        df_res['time_str'] = [(start_time_obj + datetime.timedelta(seconds=idx * 0.05)).strftime("%H:%M:%S") for idx in range(total_pts)]
+        df_res['time_str'] = [(datetime.datetime.now() + datetime.timedelta(seconds=idx * 0.05)).strftime("%H:%M:%S") for idx in range(total_pts)]
     return df_res
 
-def parse_dtb_binary(data_bytes, lap_idx=1, total_files=1, end_hour=16, end_minute=35):
+@st.cache_data
+def parse_dtb_binary_cached(data_bytes, lap_idx=1, total_files=1):
     records = []
     length = len(data_bytes)
     stride = 128
@@ -255,23 +270,26 @@ def parse_dtb_binary(data_bytes, lap_idx=1, total_files=1, end_hour=16, end_minu
             dist_m = 6371000.0 * c
             df_res['speed_kmh'] = np.clip(dist_m / 0.05 * 3.6, 0.0, 350.0)
         total_pts = len(df_res)
-        end_time_obj = datetime.datetime.now().replace(hour=end_hour, minute=end_minute, second=0, microsecond=0)
-        offset_sec = (total_files - lap_idx) * 90
-        start_time_obj = end_time_obj - datetime.timedelta(seconds=offset_sec + total_pts * 0.05)
-        df_res['time_str'] = [(start_time_obj + datetime.timedelta(seconds=idx * 0.05)).strftime("%H:%M:%S") for idx in range(total_pts)]
+        df_res['time_str'] = [(datetime.datetime.now() + datetime.timedelta(seconds=idx * 0.05)).strftime("%H:%M:%S") for idx in range(total_pts)]
     return df_res
 
-def split_time_sessions(df, gap_seconds=600):
+def split_time_sessions(df, gap_seconds=300):
     if df is None or df.empty: return [df]
     idx_diff = np.diff(df.index)
     session_cuts = np.where(idx_diff > (gap_seconds * 20))[0]
+    
     sessions = []
     start_idx = 0
     for cut in session_cuts:
-        sessions.append(df.iloc[start_idx:cut+1].copy())
+        sess = df.iloc[start_idx:cut+1].copy()
+        if len(sess) >= 10:
+            sessions.append(sess)
         start_idx = cut + 1
-    sessions.append(df.iloc[start_idx:].copy())
-    return sessions
+    last_sess = df.iloc[start_idx:].copy()
+    if len(last_sess) >= 10:
+        sessions.append(last_sess)
+        
+    return sessions if sessions else [df]
 
 def parse_csv_data(data_bytes):
     try:
@@ -305,27 +323,7 @@ def parse_csv_data(data_bytes):
     except:
         return pd.DataFrame()
 
-def fetch_osm_raceway_width(center_lat, center_lon, radius_m=1200):
-    overpass_url = "http://overpass-api.de/api/interpreter"
-    query = f"""
-    [out:json];
-    (way["highway"="raceway"](around:{radius_m},{center_lat},{center_lon}););
-    out body; >; out skel qt;
-    """
-    try:
-        response = requests.post(overpass_url, data={'data': query}, timeout=8)
-        data = response.json()
-        nodes = {node['id']: (node['lat'], node['lon']) for node in data['elements'] if node['type'] == 'node'}
-        ways = []
-        for element in data['elements']:
-            if element['type'] == 'way':
-                way_coords = [nodes[node_id] for node_id in element['nodes'] if node_id in nodes]
-                if way_coords: ways.append(way_coords)
-        return ways
-    except:
-        return []
-
-def process_lap_telemetry(df, min_pts=500, dist_thresh=0.00025, manual_start=None):
+def process_lap_telemetry(df, min_pts=600, dist_thresh=0.00015, manual_start=None):
     if df is None or df.empty or 'lat' not in df.columns or len(df) < 5:
         if df is not None and not df.empty and 'lap' not in df.columns:
             df['lap'] = 1
@@ -361,9 +359,6 @@ def process_lap_telemetry(df, min_pts=500, dist_thresh=0.00025, manual_start=Non
     choices = ['Braking', 'Accel']
     df['pedal_status'] = np.select(conditions, choices, default='Coasting')
 
-    if 'file_lap' in df.columns:
-        return df
-
     if manual_start and manual_start[0] != 0.0:
         start_lat, start_lon = manual_start[0], manual_start[1]
     else:
@@ -378,12 +373,15 @@ def process_lap_telemetry(df, min_pts=500, dist_thresh=0.00025, manual_start=Non
 
     dist = np.sqrt((df['lat'] - start_lat)**2 + (df['lon'] - start_lon)**2)
     
+    if 'file_lap' in df.columns and not manual_start:
+        return df
+
     lap_num = 1
     laps = []
     counter = 0
     for i in range(len(df)):
         counter += 1
-        if counter > min_pts and dist.iloc[i] < dist_thresh and df['speed_kmh'].iloc[i] > 20.0:
+        if counter > min_pts and dist.iloc[i] < dist_thresh:
             lap_num += 1
             counter = 0
         laps.append(lap_num)
@@ -391,31 +389,54 @@ def process_lap_telemetry(df, min_pts=500, dist_thresh=0.00025, manual_start=Non
     df['lap'] = laps
     return df
 
-def align_laps_entire_track(df):
-    if df is None or df.empty or 'lap' not in df.columns: return df
-    ref_lap = df['lap'].min()
+def align_laps_entire_track(df, pth_paths=None):
+    if df is None or df.empty or 'lat' not in df.columns: return df
     
-    ref_df = df[df['lap'] == ref_lap]
-    if len(ref_df) < 50: return df
+    fast_pts = df[df['speed_kmh'] > 15.0]
+    if fast_pts.empty: fast_pts = df
+    
+    data_center_lat = fast_pts['lat'].mean()
+    data_center_lon = fast_pts['lon'].mean()
 
-    ref_center_lat = ref_df['lat'].mean()
-    ref_center_lon = ref_df['lon'].mean()
+    if pth_paths and len(pth_paths) > 0:
+        all_pth_pts = pd.concat(pth_paths, ignore_index=True)
+        pth_center_lat = all_pth_pts['lat'].mean()
+        pth_center_lon = all_pth_pts['lon'].mean()
+        
+        offset_lat = pth_center_lat - data_center_lat
+        offset_lon = pth_center_lon - data_center_lon
+        
+        df['lat'] += offset_lat
+        df['lon'] += offset_lon
 
+    return df
+
+def auto_align_laps_to_ref(df, ref_lap_id):
+    if df is None or df.empty or 'lap' not in df.columns: return df
+    ref_df = df[df['lap'] == ref_lap_id].reset_index(drop=True)
+    if ref_df.empty: return df
+    
+    ref_coords = ref_df[['lat', 'lon']].values
+    
     for lap_id in df['lap'].unique():
-        if lap_id == ref_lap: continue
+        if lap_id == ref_lap_id: continue
         lap_mask = df['lap'] == lap_id
-        lap_df = df[lap_mask]
+        lap_df = df[lap_mask].reset_index(drop=True)
         if len(lap_df) < 50: continue
         
-        lap_center_lat = lap_df['lat'].mean()
-        lap_center_lon = lap_df['lon'].mean()
-
-        offset_lat = ref_center_lat - lap_center_lat
-        offset_lon = ref_center_lon - lap_center_lon
-
-        df.loc[lap_mask, 'lat'] += offset_lat
-        df.loc[lap_mask, 'lon'] += offset_lon
-
+        lap_coords = lap_df[['lat', 'lon']].values
+        dists = np.linalg.norm(lap_coords[:, None, :] - ref_coords[None, :, :], axis=2)
+        closest_indices = np.argmin(dists, axis=1)
+        matched_ref_coords = ref_coords[closest_indices]
+        
+        offset = np.mean(matched_ref_coords - lap_coords, axis=0)
+        
+        offset[0] = np.clip(offset[0], -0.00015, 0.00015)
+        offset[1] = np.clip(offset[1], -0.00015, 0.00015)
+        
+        df.loc[lap_mask, 'lat'] += offset[0]
+        df.loc[lap_mask, 'lon'] += offset[1]
+        
     return df
 
 def rotate_coordinates(df, angle_deg, center_lat, center_lon):
@@ -435,44 +456,91 @@ def format_lap_time(seconds):
     rem_seconds = seconds % 60
     return f"{minutes}:{rem_seconds:06.3f}"
 
-def render_rotated_bike_image(bike_pil_img, lean_deg):
-    if bike_pil_img is None: return None
-    return bike_pil_img.rotate(lean_deg, resample=Image.BICUBIC, expand=True)
-
 # -----------------------------------------------------------------------------
-# 5. サイドバーUI ＆ 言語切替
+# 5. サイドバーUI ＆ ドロップエリア用破線枠・グレー背景CSS
 # -----------------------------------------------------------------------------
-st.sidebar.markdown("### 🌐 LANGUAGE / 言語切替")
+st.sidebar.markdown("### LANGUAGE / 言語切替")
 lang_choice = st.sidebar.radio("Language:", ["日本語", "English"], index=0, horizontal=True)
 L = LANG_DICT[lang_choice]
 
 st.sidebar.markdown("---")
 st.sidebar.markdown(f"### {L['theme_select']}")
-theme_name = st.sidebar.radio("Theme:", list(THEMES.keys()), index=0)
+theme_name = st.sidebar.radio("Theme Mode:", list(THEMES.keys()), index=0)
 cur_theme = THEMES[theme_name]
 
+# ドロップエリア（.stFileUploader）へ明確な破線枠とグレー背景を適用
 st.markdown(f"""
 <style>
     .stApp {{ background-color: {cur_theme['bg_app']}; color: {cur_theme['text']}; }}
     section[data-testid="stSidebar"] {{ background-color: {cur_theme['bg_panel']}; border-right: 1px solid {cur_theme['border']}; padding-top: 1rem; }}
-    .block-container {{ padding-top: 1.2rem; padding-bottom: 1rem; padding-left: 1.5rem; padding-right: 1.5rem; }}
+    
+    h1, h2, h3, h4, h5, h6, label, .stMarkdown, p, span, div {{
+        color: {cur_theme['text']} !important;
+    }}
+    
     .main-title {{
-        font-size: 2.8rem; font-weight: 900; letter-spacing: -1px;
-        background: linear-gradient(90deg, {cur_theme['accent']} 0%, #ffffff 100%);
+        font-size: 4.5rem; font-weight: 200; letter-spacing: 4px; line-height: 1.1;
+        background: linear-gradient(90deg, {cur_theme['accent']} 0%, {cur_theme['text']} 100%);
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        margin-bottom: 0.2rem;
+        margin-top: 0.5rem; margin-bottom: 0.2rem; padding-top: 0.5rem;
     }}
-    .sub-title {{ font-size: 0.85rem; color: #64748b; margin-bottom: 1rem; text-transform: uppercase; letter-spacing: 1px; }}
-    .metric-card {{
+    .sub-title {{ font-size: 0.90rem; font-weight: 300; color: {cur_theme['subtext']} !important; margin-bottom: 1.2rem; letter-spacing: 2px; }}
+    
+    .toolbar-box {{
         background: {cur_theme['bg_card']};
-        border: 1px solid {cur_theme['border']}; border-radius: 8px; padding: 8px 12px; text-align: center;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        border: 1px solid {cur_theme['border']};
+        border-radius: 6px;
+        padding: 8px 12px;
+        margin-bottom: 12px;
     }}
-    .metric-title {{ color: {cur_theme['text']}; font-size: 0.75rem; font-weight: 700; opacity: 0.8; letter-spacing: 0.5px; }}
-    .metric-value {{ font-size: 1.35rem; font-weight: 800; margin: 2px 0; }}
-    .metric-unit {{ font-size: 0.75rem; color: {cur_theme['text']}; opacity: 0.6; }}
-    .best-lap-card {{ border-color: {cur_theme['best']}; }}
-    div[data-baseweb="select"] > div {{ background-color: {cur_theme['bg_card']} !important; border-color: {cur_theme['border']} !important; }}
+    .toolbar-title {{
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: {cur_theme['accent']} !important;
+        margin-bottom: 6px;
+        letter-spacing: 0.5px;
+    }}
+    
+    .metric-card-slim {{
+        background: {cur_theme['bg_card']};
+        border: 1px solid {cur_theme['border']};
+        border-radius: 4px;
+        padding: 2px 4px;
+        text-align: center;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }}
+    
+    /* 【追加】ファイルドロップエリアの破線枠 ＆ グレー背景スタイル */
+    div[data-testid="stFileUploader"] section {{
+        background-color: {cur_theme['drop_bg']} !important;
+        border: 2px dashed {cur_theme['drop_border']} !important;
+        border-radius: 8px !important;
+        padding: 12px !important;
+    }}
+    div[data-testid="stFileUploader"] section:hover {{
+        border-color: {cur_theme['accent']} !important;
+    }}
+    
+    div[data-baseweb="select"] > div {{
+        background-color: {cur_theme['bg_card']} !important;
+        border-color: {cur_theme['border']} !important;
+        color: {cur_theme['text']} !important;
+    }}
+    div[data-baseweb="select"] span {{
+        color: {cur_theme['text']} !important;
+    }}
+    ul[role="listbox"] {{
+        background-color: {cur_theme['bg_card']} !important;
+    }}
+    ul[role="listbox"] li span {{
+        color: {cur_theme['text']} !important;
+    }}
+    
+    button[kind="secondary"], button[kind="primary"] {{
+        background-color: {cur_theme['bg_card']} !important;
+        color: {cur_theme['text']} !important;
+        border: 1px solid {cur_theme['border']} !important;
+    }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -483,42 +551,35 @@ saved_settings = {}
 if uploaded_setting_file is not None:
     try:
         saved_settings = json.load(uploaded_setting_file)
+        if "custom_names" in saved_settings and isinstance(saved_settings["custom_names"], dict):
+            saved_settings["custom_names"] = {
+                int(k) if str(k).isdigit() else k: str(v)
+                for k, v in saved_settings["custom_names"].items()
+            }
         st.sidebar.success(L['config_loaded'])
-    except:
-        st.sidebar.error(L['config_failed'])
+    except Exception as e:
+        st.sidebar.error(f"{L['config_failed']}: {e}")
 
-uploaded_files = st.sidebar.file_uploader(L['telemetry_file'], type=["bnx4", "dtb", "csv"], accept_multiple_files=True)
+uploaded_files = st.sidebar.file_uploader(L['telemetry_file'], type=["bnx", "bnx4", "dtb", "csv"], accept_multiple_files=True)
 uploaded_pth_file = st.sidebar.file_uploader(L['circuit_pth'], type=["pth"])
 uploaded_bg_img = st.sidebar.file_uploader(L['circuit_bg'], type=["png", "jpg", "jpeg"])
-uploaded_geojson_file = st.sidebar.file_uploader(L['geojson_file'], type=["geojson", "json"])
-
-# bike.png はフォルダ内固定自動読込（UI要素なし）
-bike_pil = None
-if os.path.exists('bike.png'):
-    bike_pil = Image.open('bike.png')
-elif os.path.exists('input_file_2.png'):
-    bike_pil = Image.open('input_file_2.png')
 
 pth_paths = []
 if uploaded_pth_file is not None:
-    pth_paths = parse_pth_course_file(uploaded_pth_file.getvalue())
+    pth_paths = parse_pth_course_text(uploaded_pth_file.getvalue().decode('utf-8', errors='ignore'))
 
-st.sidebar.markdown("⏱️ **最終走行時刻基準（JST）の設定**")
-end_h = st.sidebar.number_input("最終周 終了時間(時)", min_value=0, max_value=23, value=16)
-end_m = st.sidebar.number_input("最終周 終了時間(分)", min_value=0, max_value=59, value=35)
+map_style = st.sidebar.selectbox(f"{L['render_style']}:", ["自動生成 想定コース幅（路面帯）", "OSM サーキットコース幅自動取得 (方法3)", "グラデーションカラー表示", "独自画像背景", "ESRI 衛星写真 (高画質)", "標準地図 (OSM)"])
 
-map_style = st.sidebar.selectbox(f"{L['render_style']}:", ["自動生成 想定コース幅（路面帯）", "OSM サーキットコース幅自動取得 (方法3)", "国土地理院/GeoJSON コース幅 (方法1)", "グラデーションカラー表示", "独自画像背景", "ESRI 衛星写真 (高画質)", "標準地図 (OSM)"])
-
-auto_track_width = 18
+auto_track_width = 9
 auto_track_opacity = 0.25
 auto_offset_x_int, auto_offset_y_int = 0, 0
 
 if map_style == "自動生成 想定コース幅（路面帯）":
-    auto_track_width = st.sidebar.slider(L['track_width'], 8, 40, int(saved_settings.get("auto_track_width", 18)), 1)
+    auto_track_width = st.sidebar.slider(L['track_width'], 4, 30, int(saved_settings.get("auto_track_width", 9)), 1)
     auto_track_opacity = st.sidebar.slider(L['track_opacity'], 0.05, 0.80, float(saved_settings.get("auto_track_opacity", 0.25)), 0.05)
-    st.sidebar.caption(f"📐 **{L['track_shift_x']} / Y**")
-    auto_offset_x_int = st.sidebar.number_input(L['track_shift_x'], min_value=-100, max_value=100, value=int(saved_settings.get("auto_offset_x_int", 0)), step=1)
-    auto_offset_y_int = st.sidebar.number_input(L['track_shift_y'], min_value=-100, max_value=100, value=int(saved_settings.get("auto_offset_y_int", 0)), step=1)
+    st.sidebar.caption(f"全体コース位置 X / Y")
+    auto_offset_x_int = st.sidebar.number_input(L['track_shift_x'], min_value=-200, max_value=200, value=int(saved_settings.get("auto_offset_x_int", 0)), step=1)
+    auto_offset_y_int = st.sidebar.number_input(L['track_shift_y'], min_value=-200, max_value=200, value=int(saved_settings.get("auto_offset_y_int", 0)), step=1)
 
 auto_offset_x = auto_offset_x_int * 0.00001
 auto_offset_y = auto_offset_y_int * 0.00001
@@ -534,96 +595,162 @@ bg_offset_x_int, bg_offset_y_int = 0, 0
 bg_scale_x, bg_scale_y, bg_opacity = 1.0, 1.0, 0.6
 
 if map_style == "独自画像背景" and uploaded_bg_img is not None:
-    st.sidebar.caption(f"📐 **{L['bg_shift']}**")
+    st.sidebar.caption(f"コース図面調整")
     bg_offset_x_int = st.sidebar.number_input(L['offset_x'], min_value=-100, max_value=100, value=int(saved_settings.get("bg_offset_x_int", 0)), step=1)
     bg_offset_y_int = st.sidebar.number_input(L['offset_y'], min_value=-100, max_value=100, value=int(saved_settings.get("bg_offset_y_int", 0)), step=1)
     bg_scale_x = st.sidebar.number_input(L['scale_x'], value=float(saved_settings.get("bg_scale_x", 1.000)), min_value=0.100, max_value=5.000, step=0.010, format="%.3f")
     bg_scale_y = st.sidebar.number_input(L['scale_y'], value=float(saved_settings.get("bg_scale_y", 1.000)), min_value=0.100, max_value=5.000, step=0.010, format="%.3f")
     bg_opacity = st.sidebar.slider(L['opacity'], 0.10, 1.00, float(saved_settings.get("bg_opacity", 0.60)), 0.05)
 
-bg_offset_x = bg_offset_x_int * 0.00001
-bg_offset_y = bg_offset_y_int * 0.00001
+default_split_pts = int(saved_settings.get("split_pts", 800))
+split_pts = st.sidebar.number_input(L['min_pts'], min_value=100, max_value=2000, value=default_split_pts, step=50)
 
-split_pts = st.sidebar.number_input(L['min_pts'], min_value=10, max_value=2000, value=int(saved_settings.get("split_pts", 500)), step=50)
-auto_align = st.sidebar.button(L['auto_gps'])
+map_height_px = st.sidebar.slider(L['map_height_label'], 400, 1200, 680, 20)
+marker_font_size = st.sidebar.slider(L['marker_text_size'], 10, 30, 14, 1)
+
+col_gps_btn1, col_gps_btn2 = st.sidebar.columns(2)
+with col_gps_btn1:
+    auto_align = st.button(L['auto_gps'])
+with col_gps_btn2:
+    reset_gps_btn = st.button(L['reset_gps'])
 
 # -----------------------------------------------------------------------------
-# 6. マルチファイルパース (.dtb / .bnx4 / .csv)
+# 6. マルチファイルパース ＆ 保存ラップの保持
 # -----------------------------------------------------------------------------
-df = None
-raw_df = pd.DataFrame()
+if 'saved_kept_laps' not in st.session_state:
+    st.session_state['saved_kept_laps'] = {}
 
-if uploaded_files:
+if 'individual_lap_offsets' not in st.session_state:
+    st.session_state['individual_lap_offsets'] = {}
+
+files_sig = "|".join(sorted([f"{f.name}_{f.size}" for f in uploaded_files])) if uploaded_files else ""
+
+if 'last_files_sig' not in st.session_state or st.session_state['last_files_sig'] != files_sig:
+    st.session_state['last_files_sig'] = files_sig
+    st.session_state['cached_raw_df'] = pd.DataFrame()
+
+if uploaded_files and st.session_state['cached_raw_df'].empty:
     dfs_list = []
     if len(uploaded_files) >= 1 and all(f.name.lower().endswith('.dtb') for f in uploaded_files):
         total_files = len(uploaded_files)
         for f_idx, u_f in enumerate(uploaded_files):
             f_bytes = u_f.getvalue()
-            single_df = parse_dtb_binary(f_bytes, lap_idx=f_idx+1, total_files=total_files, end_hour=end_h, end_minute=end_m)
+            single_df = parse_dtb_binary_cached(f_bytes, lap_idx=f_idx+1, total_files=total_files)
             if not single_df.empty:
                 single_df['lap'] = f_idx + 1
                 single_df['file_lap'] = True
                 dfs_list.append(single_df)
-        raw_df = pd.concat(dfs_list, ignore_index=True) if dfs_list else pd.DataFrame()
+        st.session_state['cached_raw_df'] = pd.concat(dfs_list, ignore_index=True) if dfs_list else pd.DataFrame()
     else:
         u_f = uploaded_files[0]
         fname = u_f.name.lower()
         f_bytes = u_f.getvalue()
-        if fname.endswith('.bnx4'):
-            raw_df = parse_bnx4_binary(f_bytes, end_hour=end_h, end_minute=end_m)
+        if fname.endswith('.bnx') or fname.endswith('.bnx4'):
+            st.session_state['cached_raw_df'] = parse_bnx4_binary_cached(f_bytes)
         elif fname.endswith('.dtb'):
-            raw_df = parse_dtb_binary(f_bytes, lap_idx=1, total_files=1, end_hour=end_h, end_minute=end_m)
-            raw_df['file_lap'] = True
+            raw_temp = parse_dtb_binary_cached(f_bytes, lap_idx=1, total_files=1)
+            raw_temp['file_lap'] = True
+            st.session_state['cached_raw_df'] = raw_temp
         else:
-            raw_df = parse_csv_data(f_bytes)
-        
-    if not raw_df.empty and 'lat' in raw_df.columns:
-        if 'file_lap' in raw_df.columns:
-            sessions = [raw_df]
-        else:
-            sessions = split_time_sessions(raw_df, gap_seconds=600)
-        
-        st.sidebar.markdown("---")
-        st.sidebar.markdown(f"🏁 **{L['select_session']}**")
-        
-        session_options = ["--- ALL DATA / 全走行データ (一括) ---"]
-        for idx, s_df in enumerate(sessions):
-            start_t = s_df['time_str'].iloc[0] if 'time_str' in s_df.columns else "00:00:00"
-            end_t = s_df['time_str'].iloc[-1] if 'time_str' in s_df.columns else "00:00:00"
-            dur_m = len(s_df) * 0.05 / 60.0
-            session_options.append(f"Group {idx+1}: [{start_t} 〜 {end_t}] ({dur_m:.1f}m)")
-        
-        selected_session = st.sidebar.selectbox("Session:", session_options)
-        
-        if "ALL DATA" in selected_session:
-            df = raw_df
-        else:
-            try:
-                s_idx = int(selected_session.split(":")[0].replace("Group", "").strip()) - 1
-                df = sessions[s_idx]
-            except:
-                df = raw_df
+            st.session_state['cached_raw_df'] = parse_csv_data(f_bytes)
 
-        use_visual_start = st.sidebar.checkbox(L['visual_start'], value=False)
-        manual_start_tuple = None
-        
-        if use_visual_start and df is not None and not df.empty and len(df) > 1:
-            max_idx = len(df) - 1
-            start_idx = st.sidebar.slider(L['start_slider'], 0, max_idx, 0, min(10, max_idx))
-            target_pt = df.iloc[start_idx]
+raw_df = st.session_state['cached_raw_df']
+df = None
+
+if 'gps_aligned_flag' not in st.session_state:
+    st.session_state['gps_aligned_flag'] = False
+
+if reset_gps_btn:
+    st.session_state['gps_aligned_flag'] = False
+    st.session_state['cached_raw_df'] = pd.DataFrame()
+    st.session_state['individual_lap_offsets'] = {}
+    st.sidebar.info("GPS位置座標および個別オフセットを初期状態へリセットしました。")
+
+if auto_align:
+    st.session_state['gps_aligned_flag'] = True
+
+if not raw_df.empty and 'lat' in raw_df.columns:
+    if 'file_lap' in raw_df.columns:
+        sessions = [raw_df]
+    else:
+        sessions = split_time_sessions(raw_df, gap_seconds=300)
+    
+    st.sidebar.markdown("---")
+    st.sidebar.markdown(f"**{L['select_session']}**")
+    
+    session_options = []
+    for idx, s_df in enumerate(sessions):
+        start_t = s_df['time_str'].iloc[0] if 'time_str' in s_df.columns else "00:00:00"
+        end_t = s_df['time_str'].iloc[-1] if 'time_str' in s_df.columns else "00:00:00"
+        dur_m = len(s_df) * 0.05 / 60.0
+        session_options.append(f"Group {idx+1}: [{start_t} 〜 {end_t}] ({dur_m:.1f}分走行)")
+    
+    selected_sessions = st.sidebar.multiselect("Sessions:", session_options, default=[session_options[0]] if session_options else [])
+    
+    if selected_sessions:
+        selected_dfs = []
+        for s_opt in selected_sessions:
+            try:
+                s_idx = int(s_opt.split(":")[0].replace("Group", "").strip()) - 1
+                selected_dfs.append(sessions[s_idx])
+            except: pass
+        df = pd.concat(selected_dfs, ignore_index=True) if selected_dfs else raw_df.copy()
+    else:
+        df = raw_df.copy()
+
+    st.sidebar.markdown("---")
+    use_visual_start = st.sidebar.checkbox(L['visual_start'], value=False)
+    manual_start_tuple = None
+    
+    if use_visual_start and df is not None and not df.empty and len(df) > 50:
+        fast_df = df[df['speed_kmh'] > 20.0].reset_index(drop=True)
+        if not fast_df.empty:
+            max_sp_idx = fast_df['speed_kmh'].idxmax()
+            
+            hist, xedges, yedges = np.histogram2d(fast_df['lat'], fast_df['lon'], bins=40)
+            max_bin = np.unravel_index(hist.argmax(), hist.shape)
+            c_lat = (xedges[max_bin[0]] + xedges[max_bin[0]+1]) / 2.0
+            c_lon = (yedges[max_bin[1]] + yedges[max_bin[1]+1]) / 2.0
+            dists = np.sqrt((fast_df['lat'] - c_lat)**2 + (fast_df['lon'] - c_lon)**2)
+            auto_c_idx = dists.idxmin()
+            
+            candidate_labels = [
+                "候補 A: コントロールライン自動推定地点",
+                "候補 B: 最高速メインストレート地点"
+            ]
+            selected_candidate = st.sidebar.selectbox(L['start_candidate_label'], candidate_labels)
+            
+            base_idx = auto_c_idx if "候補 A" in selected_candidate else max_sp_idx
+            meter_offset = st.sidebar.slider(L['start_offset_label'], -100, 100, 0, 2)
+            
+            point_offset = int(meter_offset * 1.5)
+            final_idx = (base_idx + point_offset) % len(fast_df)
+            
+            target_pt = fast_df.iloc[final_idx]
             manual_start_tuple = (target_pt['lat'], target_pt['lon'])
 
-        if df is not None and not df.empty:
-            df = process_lap_telemetry(df, min_pts=split_pts, manual_start=manual_start_tuple)
-            if auto_align:
-                df = align_laps_entire_track(df)
-                st.sidebar.success(L['auto_gps'])
+    if df is not None and not df.empty:
+        df = process_lap_telemetry(df, min_pts=split_pts, manual_start=manual_start_tuple)
+        if st.session_state.get('gps_aligned_flag', False):
+            df = align_laps_entire_track(df, pth_paths=pth_paths)
 
 # -----------------------------------------------------------------------------
-# 7. メインアレイ描画
+# 7. メイン解析領域
 # -----------------------------------------------------------------------------
-st.markdown('<div class="main-title">CIRCUIT ANALYZE <span style="font-size:1.5rem; font-weight:400; opacity:0.6;">ver1.0</span></div>', unsafe_allow_html=True)
+st.markdown('<div class="main-title">CIRCUIT ANALYZE <span style="font-size:1.6rem; font-weight:200; opacity:0.6;">ver1.0</span></div>', unsafe_allow_html=True)
 st.markdown(f'<div class="sub-title">{L["title_sub"]}</div>', unsafe_allow_html=True)
+
+if st.session_state['saved_kept_laps']:
+    st.sidebar.markdown("---")
+    st.sidebar.markdown(f"**{L['saved_laps_select']}**")
+    selected_kept_keys = st.sidebar.multiselect("Kept Laps:", list(st.session_state['saved_kept_laps'].keys()))
+    if selected_kept_keys and df is not None:
+        kept_dfs = [st.session_state['saved_kept_laps'][k] for k in selected_kept_keys]
+        max_existing_lap = df['lap'].max() if 'lap' in df.columns else 0
+        for k_idx, k_df in enumerate(kept_dfs):
+            k_df_copy = k_df.copy()
+            k_df_copy['lap'] = max_existing_lap + k_idx + 1
+            df = pd.concat([df, k_df_copy], ignore_index=True)
 
 if df is not None and not df.empty and 'lat' in df.columns:
     if 'lap' not in df.columns:
@@ -635,7 +762,8 @@ if df is not None and not df.empty and 'lat' in df.columns:
         lap_sec = len(group) * 0.05
         max_sp = ceil_2(group['speed_kmh'].max())
         avg_sp = ceil_2(group['speed_kmh'].mean())
-        if lap_sec > 400: continue
+        
+        if lap_sec < 40.0 or lap_sec > 400.0: continue
         
         start_time_str = group['time_str'].iloc[0] if 'time_str' in group.columns else "00:00:00"
         
@@ -652,39 +780,71 @@ if df is not None and not df.empty and 'lat' in df.columns:
     sum_df = pd.DataFrame(lap_list)
     
     if not sum_df.empty:
-        best_row = sum_df.loc[sum_df['RawSec'].idxmin()]
+        sum_df_sorted = sum_df.sort_values('RawSec').reset_index(drop=True)
+        best_row = sum_df_sorted.iloc[0]
+        best_lap_id = int(best_row['Lap'])
 
-        available_laps = sum_df['Lap'].tolist()
-        
-        default_selected = [int(best_row['Lap'])]
-        if len(available_laps) > 1:
-            second_best = sum_df.sort_values('RawSec').iloc[1]['Lap']
-            default_selected.append(int(second_best))
+        available_laps = sum_df_sorted['Lap'].tolist()
 
-        col_select_top, col_filter_top = st.columns([3, 1.5])
+        # 比較ラップ選択パネル
+        st.markdown('<div class="toolbar-box">', unsafe_allow_html=True)
+        st.markdown('<div class="toolbar-title">比較周回の選択 ＆ プリセット切り替え</div>', unsafe_allow_html=True)
         
-        with col_filter_top:
-            excluded_laps = st.multiselect(
-                L['filter_laps'],
-                options=available_laps,
-                default=[],
-                format_func=lambda x: f"Lap {x} [{sum_df.loc[sum_df['Lap']==x, 'LapTime'].values[0]}]"
-            )
+        p_col1, p_col2, p_col3, p_col4 = st.columns([1, 1, 1, 3.5])
         
-        filtered_available_laps = [l for l in available_laps if l not in excluded_laps]
-        filtered_default_selected = [l for l in default_selected if l not in excluded_laps]
+        if 'preset_select_mode' not in st.session_state:
+            st.session_state['preset_select_mode'] = 'top10'
 
-        with col_select_top:
-            selected_laps = st.multiselect(
-                f"{L['compare_laps']}:",
-                options=filtered_available_laps,
-                default=filtered_default_selected[:10],
-                format_func=lambda x: f"Lap {x} [{sum_df.loc[sum_df['Lap']==x, 'LapTime'].values[0]}]({sum_df.loc[sum_df['Lap']==x, 'StartTime'].values[0]}){sum_df.loc[sum_df['Lap']==x, 'MaxSpeed'].values[0]:.2f}km/h"
-            )
+        with p_col1:
+            if st.button("Fastest Top 5"):
+                st.session_state['preset_select_mode'] = 'top5'
+        with p_col2:
+            if st.button("Fastest Top 10"):
+                st.session_state['preset_select_mode'] = 'top10'
+        with p_col3:
+            if st.button("全選択解除"):
+                st.session_state['preset_select_mode'] = 'clear'
+
+        if st.session_state['preset_select_mode'] == 'top5':
+            default_selection = available_laps[:5]
+        elif st.session_state['preset_select_mode'] == 'clear':
+            default_selection = []
+        else:
+            default_selection = available_laps[:10]
+
+        selected_laps = st.multiselect(
+            L['compare_laps'],
+            options=available_laps,
+            default=default_selection,
+            format_func=lambda x: f"Lap {x} [{sum_df.loc[sum_df['Lap']==x, 'LapTime'].values[0]}] (時刻 {sum_df.loc[sum_df['Lap']==x, 'StartTime'].values[0]}) - 最高速 {sum_df.loc[sum_df['Lap']==x, 'MaxSpeed'].values[0]:.1f}km/h"
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
 
         if len(selected_laps) > 10: selected_laps = selected_laps[:10]
 
+        # サイドバー：LAP個別GPS位置微調整UI
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("🎯 **LAP個別GPS位置微調整 (X/Y)**")
+        
+        if selected_laps:
+            target_adjust_lap = st.sidebar.selectbox("調整対象のLAPを選択:", selected_laps, format_func=lambda x: f"Lap {x}")
+            
+            cur_offsets = st.session_state['individual_lap_offsets'].get(target_adjust_lap, (0.0, 0.0))
+            
+            adj_x = st.sidebar.slider(f"Lap {target_adjust_lap} 東西シフト (m)", -15.0, 15.0, float(cur_offsets[0] * 100000.0), 0.1)
+            adj_y = st.sidebar.slider(f"Lap {target_adjust_lap} 南北シフト (m)", -15.0, 15.0, float(cur_offsets[1] * 100000.0), 0.1)
+            
+            st.session_state['individual_lap_offsets'][target_adjust_lap] = (adj_x / 100000.0, adj_y / 100000.0)
+
+            if st.sidebar.button("🎯 選択LAPを基準ラインへ自動フィッティング"):
+                df = auto_align_laps_to_ref(df, ref_lap_id=selected_laps[0])
+                st.sidebar.success("全LAPの走行軌跡をベストラップラインへ自動フィッティング完了！")
+
         custom_names = {}
+        loaded_custom_names = saved_settings.get("custom_names", {})
+        for lap_id in selected_laps:
+            custom_names[lap_id] = loaded_custom_names.get(lap_id, loaded_custom_names.get(str(lap_id), f"Lap {lap_id}"))
+
         if selected_laps:
             center_lat, center_lon = df['lat'].mean(), df['lon'].mean()
             df['rot_lat'], df['rot_lon'] = rotate_coordinates(df, rotation_angle, center_lat, center_lon)
@@ -693,211 +853,265 @@ if df is not None and not df.empty and 'lat' in df.columns:
             sub_lap_id = selected_laps[1] if len(selected_laps) > 1 else None
             colors = cur_theme['colors']
 
-            col_main_replay, col_side_laps = st.columns([2.7, 1.3])
+            main_df = df[df['lap'] == main_lap_id].reset_index(drop=True)
+            if main_df.empty:
+                main_df = df.reset_index(drop=True)
 
-            with col_main_replay:
-                col_c1, col_c2, col_c3 = st.columns([1, 1, 1])
-                with col_c1: show_pedal_points = st.checkbox(L['braking_points'], value=True)
-                with col_c2: x_axis_type = st.radio(L['trace_axis'], [L['dist_m'], L['time_s']], horizontal=True)
-                with col_c3: speed_factor = st.radio(L['replay_speed'], ["0.5x", "1.0x", "2.0x", "4.0x"], index=1, horizontal=True)
+            st.markdown('<div class="toolbar-box">', unsafe_allow_html=True)
+            col_b1, col_b2, col_b3, col_b4 = st.columns([1.2, 1.2, 1.1, 1.1])
+            
+            with col_b1:
+                st.markdown('<div class="toolbar-title">描画オプション</div>', unsafe_allow_html=True)
+                show_pedal_points = st.checkbox(L['braking_points'], value=True)
+                line_color_mode = st.selectbox(L['line_color_mode'], ["ラップ単色", "車速グラデーション", "ブレーキGグラデーション"])
+                
+            with col_b2:
+                st.markdown('<div class="toolbar-title">表示モード</div>', unsafe_allow_html=True)
+                hide_hud_panel = st.checkbox(L['toggle_hud'], value=False)
+                view_mode = st.radio(L['view_mode'], ["全域表示", "ズーム追従"], index=0, horizontal=True)
+                
+            with col_b3:
+                st.markdown('<div class="toolbar-title">比較軸設定</div>', unsafe_allow_html=True)
+                x_axis_type = st.radio(L['trace_axis'], [L['dist_m'], L['time_s']], horizontal=True)
+                
+            with col_b4:
+                st.markdown('<div class="toolbar-title">再生速度</div>', unsafe_allow_html=True)
+                speed_factor = st.radio(L['replay_speed'], ["0.5x", "1.0x", "2.0x", "4.0x"], index=1, horizontal=True)
 
-                step_stride = {"0.5x": 1, "1.0x": 2, "2.0x": 4, "4.0x": 8}[speed_factor]
+            st.markdown('</div>', unsafe_allow_html=True)
 
-                fig_map = go.Figure()
+            step_stride = {"0.5x": 1, "1.0x": 2, "2.0x": 4, "4.0x": 8}[speed_factor]
 
-                base_traces_count = 0
+            if not hide_hud_panel:
+                col_map_half, col_trace_half = st.columns([4.5, 1.0])
+            else:
+                col_map_half = st.container()
+                col_trace_half = None
 
-                # 1. .pth コースガイドライン（読み込まれている場合描画）
-                if pth_paths:
-                    for pth_df in pth_paths:
-                        pth_df['rot_lat'], pth_df['rot_lon'] = rotate_coordinates(pth_df, rotation_angle, center_lat, center_lon)
-                        fig_map.add_trace(go.Scatter(
-                            x=pth_df['rot_lon'] + auto_offset_x,
-                            y=pth_df['rot_lat'] + auto_offset_y,
-                            mode='lines', name="PTH Circuit Boundary",
-                            line=dict(width=auto_track_width, color=f"rgba(160, 180, 200, {auto_track_opacity})"),
-                            hoverinfo='skip', showlegend=False
+            with col_map_half:
+                def build_map_figure(is_zoomed=False, target_center=None, clicked_point=None):
+                    fig = go.Figure()
+                    base_count = 0
+
+                    pth_width = max(1.5, auto_track_width / 2.0)
+
+                    # 全<path>要素の描画
+                    if pth_paths:
+                        for pth_df in pth_paths:
+                            pth_df['rot_lat'], pth_df['rot_lon'] = rotate_coordinates(pth_df, rotation_angle, center_lat, center_lon)
+                            fig.add_trace(go.Scatter(
+                                x=pth_df['rot_lon'] + auto_offset_x,
+                                y=pth_df['rot_lat'] + auto_offset_y,
+                                mode='lines', name="PTH Circuit Boundary",
+                                line=dict(width=pth_width, color=cur_theme['pth_line']),
+                                hoverinfo='skip', showlegend=False
+                            ))
+                            base_count += 1
+
+                    if map_style == "自動生成 想定コース幅（路面帯）":
+                        best_lap_data = df[df['lap'] == int(best_row['Lap'])].reset_index(drop=True)
+                        rgba_track = f"rgba(140, 160, 180, {auto_track_opacity})"
+                        rgba_curb = f"rgba(255, 255, 255, {min(1.0, auto_track_opacity + 0.2)})"
+                        
+                        track_lon = best_lap_data['rot_lon'] + auto_offset_x
+                        track_lat = best_lap_data['rot_lat'] + auto_offset_y
+
+                        fig.add_trace(go.Scatter(
+                            x=track_lon, y=track_lat,
+                            mode='lines', name="Track Curb Edge",
+                            line=dict(width=auto_track_width + 2, color=rgba_curb), hoverinfo='skip', showlegend=False
                         ))
-                        base_traces_count += 1
-
-                if map_style == "自動生成 想定コース幅（路面帯）" and not pth_paths:
-                    best_lap_data = df[df['lap'] == int(best_row['Lap'])].reset_index(drop=True)
-                    rgba_track = f"rgba(140, 160, 180, {auto_track_opacity})"
-                    rgba_curb = f"rgba(255, 255, 255, {min(1.0, auto_track_opacity + 0.2)})"
-                    
-                    track_lon = best_lap_data['rot_lon'] + auto_offset_x
-                    track_lat = best_lap_data['rot_lat'] + auto_offset_y
-
-                    fig_map.add_trace(go.Scatter(
-                        x=track_lon, y=track_lat,
-                        mode='lines', name="Track Curb Edge",
-                        line=dict(width=auto_track_width + 4, color=rgba_curb), hoverinfo='skip', showlegend=False
-                    ))
-                    fig_map.add_trace(go.Scatter(
-                        x=track_lon, y=track_lat,
-                        mode='lines', name="Track Width",
-                        line=dict(width=auto_track_width, color=rgba_track), hoverinfo='skip', showlegend=False
-                    ))
-                    base_traces_count += 2
-
-                elif map_style == "OSM サーキットコース幅自動取得 (方法3)":
-                    osm_ways = fetch_osm_raceway_width(center_lat, center_lon)
-                    for way_pts in osm_ways:
-                        w_df = pd.DataFrame(way_pts, columns=['lat', 'lon'])
-                        w_df['rot_lat'], w_df['rot_lon'] = rotate_coordinates(w_df, rotation_angle, center_lat, center_lon)
-                        fig_map.add_trace(go.Scatter(
-                            x=w_df['rot_lon'], y=w_df['rot_lat'],
-                            mode='lines', name="OSM Raceway",
-                            line=dict(width=20, color='rgba(120, 140, 160, 0.3)'), hoverinfo='skip', showlegend=False
+                        fig.add_trace(go.Scatter(
+                            x=track_lon, y=track_lat,
+                            mode='lines', name="Track Width",
+                            line=dict(width=auto_track_width, color=rgba_track), hoverinfo='skip', showlegend=False
                         ))
-                        base_traces_count += 1
+                        base_count += 2
 
-                elif map_style == "独自画像背景" and uploaded_bg_img is not None:
-                    bg_img = Image.open(uploaded_bg_img)
-                    min_x, max_x = df['rot_lon'].min(), df['rot_lon'].max()
-                    min_y, max_y = df['rot_lat'].min(), df['rot_lat'].max()
-                    mid_x = (min_x + max_x) / 2.0 + bg_offset_x
-                    mid_y = (min_y + max_y) / 2.0 + bg_offset_y
-                    span_x = (max_x - min_x) * bg_scale_x * 1.2
-                    span_y = (max_y - min_y) * bg_scale_y * 1.2
+                    for idx, lap_id in enumerate(selected_laps):
+                        lap_data = df[df['lap'] == lap_id].reset_index(drop=True)
+                        color = colors[idx % len(colors)]
+                        label_name = custom_names.get(lap_id, f"Lap {lap_id}")
 
-                    fig_map.add_layout_image(dict(
-                        source=bg_img, xref="x", yref="y",
-                        x=mid_x - span_x / 2.0, y=mid_y + span_y / 2.0,
-                        sizex=span_x, sizey=span_y,
-                        sizing="stretch", opacity=bg_opacity, layer="below"
-                    ))
+                        ind_off = st.session_state['individual_lap_offsets'].get(lap_id, (0.0, 0.0))
 
-                for idx, lap_id in enumerate(selected_laps):
-                    lap_data = df[df['lap'] == lap_id].reset_index(drop=True)
-                    color = colors[idx % len(colors)]
-                    label_name = saved_settings.get("custom_names", {}).get(str(lap_id), f"Lap {lap_id}")
-                    custom_names[lap_id] = label_name
+                        disp_lon = lap_data['rot_lon'] + auto_offset_x + ind_off[0]
+                        disp_lat = lap_data['rot_lat'] + auto_offset_y + ind_off[1]
 
-                    fig_map.add_trace(go.Scatter(
-                        x=lap_data['rot_lon'], y=lap_data['rot_lat'],
-                        mode='lines', name=f"{label_name}",
-                        line=dict(width=3.5, color=color)
-                    ))
-                    base_traces_count += 1
+                        if line_color_mode == "車速グラデーション":
+                            fig.add_trace(go.Scatter(
+                                x=disp_lon, y=disp_lat,
+                                mode='markers+lines', name=f"{label_name}",
+                                line=dict(width=1.5, color=color),
+                                marker=dict(size=4, color=lap_data['speed_kmh'], colorscale='Jet'),
+                                customdata=np.stack((lap_data.index, lap_data['speed_kmh'], lap_data['lean_angle_deg']), axis=-1),
+                                hovertemplate="%{data.name}<br>速: %{customdata[1]:.1f}km/h | 傾: %{customdata[2]:.1f}°<extra></extra>"
+                            ))
+                        elif line_color_mode == "ブレーキGグラデーション":
+                            fig.add_trace(go.Scatter(
+                                x=disp_lon, y=disp_lat,
+                                mode='markers+lines', name=f"{label_name}",
+                                line=dict(width=1.5, color=color),
+                                marker=dict(size=4, color=np.abs(lap_data['accel_g']), colorscale='Reds'),
+                                customdata=np.stack((lap_data.index, lap_data['speed_kmh'], lap_data['lean_angle_deg']), axis=-1),
+                                hovertemplate="%{data.name}<br>速: %{customdata[1]:.1f}km/h | 減速G: %{customdata[2]:.2f}G<extra></extra>"
+                            ))
+                        else:
+                            fig.add_trace(go.Scatter(
+                                x=disp_lon, y=disp_lat,
+                                mode='lines', name=f"{label_name}",
+                                line=dict(width=3.5, color=color),
+                                customdata=np.stack((lap_data.index, lap_data['speed_kmh'], lap_data['lean_angle_deg']), axis=-1),
+                                hovertemplate="%{data.name}<br>速: %{customdata[1]:.1f}km/h | 傾: %{customdata[2]:.1f}°<extra></extra>"
+                            ))
+                        base_count += 1
 
-                    if show_pedal_points and 'pedal_status' in lap_data.columns:
-                        brake_df = lap_data[lap_data['pedal_status'] == 'Braking']
-                        fig_map.add_trace(go.Scatter(
-                            x=brake_df['rot_lon'], y=brake_df['rot_lat'],
-                            mode='markers', name=f"{label_name} Brake🔴",
-                            marker=dict(size=8, color='#ff0055', symbol='circle', line=dict(width=2, color='#ffffff')),
-                            showlegend=False, hoverinfo='text',
-                            text=[f"{label_name} Brake | {ceil_2(sp):.2f} km/h" for sp in brake_df['speed_kmh']]
+                        vmin_idx = lap_data['speed_kmh'].idxmin()
+                        fig.add_trace(go.Scatter(
+                            x=[disp_lon.iloc[vmin_idx]], y=[disp_lat.iloc[vmin_idx]],
+                            mode='markers', marker=dict(size=7, color='#00ffff', symbol='diamond'),
+                            name=f"{label_name} V-min", hoverinfo='text',
+                            text=[f"{label_name} Bottom: {lap_data.iloc[vmin_idx]['speed_kmh']:.1f} km/h"], showlegend=False
                         ))
-                        base_traces_count += 1
+                        base_count += 1
 
-                initial_animated_indices = []
-                for idx, lap_id in enumerate(selected_laps):
-                    ldf = df[df['lap'] == lap_id].reset_index(drop=True)
-                    color = colors[idx % len(colors)]
-                    label_name = custom_names.get(lap_id, f"Lap {lap_id}")
-                    curr_pt = ldf.iloc[0]
-                    fig_map.add_trace(go.Scatter(
-                        x=[curr_pt['rot_lon']], y=[curr_pt['rot_lat']],
-                        mode='markers+text',
-                        marker=dict(size=14, color=color, line=dict(width=2, color='#ffffff')),
-                        text=[f" {label_name}: {ceil_2(curr_pt['speed_kmh']):.2f} km/h"],
-                        textposition="top right", showlegend=False
-                    ))
-                    initial_animated_indices.append(base_traces_count + idx)
+                        if show_pedal_points and 'pedal_status' in lap_data.columns:
+                            brake_mask = lap_data['pedal_status'] == 'Braking'
+                            fig.add_trace(go.Scatter(
+                                x=disp_lon[brake_mask], y=disp_lat[brake_mask],
+                                mode='markers', name=f"{label_name} Brake",
+                                marker=dict(size=8, color='#ff0055', symbol='circle', line=dict(width=2, color='#ffffff')),
+                                showlegend=False, hoverinfo='text',
+                                text=[f"{label_name} Brake | {ceil_2(sp):.2f} km/h" for sp in lap_data['speed_kmh'][brake_mask]]
+                            ))
+                            base_count += 1
 
-                max_len = max([len(df[df['lap'] == l_id]) for l_id in selected_laps])
-                frames = []
-                for f_idx in range(0, max_len, step_stride):
-                    frame_data = []
+                    if manual_start_tuple:
+                        m_rot_lat, m_rot_lon = rotate_coordinates(
+                            pd.DataFrame([{'lat': manual_start_tuple[0], 'lon': manual_start_tuple[1]}]),
+                            rotation_angle, center_lat, center_lon
+                        )
+                        fig.add_trace(go.Scatter(
+                            x=m_rot_lon + auto_offset_x, y=m_rot_lat + auto_offset_y,
+                            mode='markers+text',
+                            marker=dict(size=22, color='#ffcc00', symbol='hexagram', line=dict(width=3, color='#000000')),
+                            text=[" START LINE"], textposition="top center",
+                            textfont=dict(size=16, color='#ffcc00'),
+                            name="Start Marker", showlegend=False
+                        ))
+
+                    initial_animated_indices = []
                     for idx, lap_id in enumerate(selected_laps):
                         ldf = df[df['lap'] == lap_id].reset_index(drop=True)
                         color = colors[idx % len(colors)]
                         label_name = custom_names.get(lap_id, f"Lap {lap_id}")
-                        pos = min(f_idx, len(ldf) - 1)
-                        curr_pt = ldf.iloc[pos]
-                        frame_data.append(go.Scatter(
-                            x=[curr_pt['rot_lon']], y=[curr_pt['rot_lat']],
+                        curr_pt = ldf.iloc[0]
+                        ind_off = st.session_state['individual_lap_offsets'].get(lap_id, (0.0, 0.0))
+                        
+                        pos_str = TEXT_POSITIONS[idx % len(TEXT_POSITIONS)]
+                        fig.add_trace(go.Scatter(
+                            x=[curr_pt['rot_lon'] + auto_offset_x + ind_off[0]], y=[curr_pt['rot_lat'] + auto_offset_y + ind_off[1]],
                             mode='markers+text',
                             marker=dict(size=14, color=color, line=dict(width=2, color='#ffffff')),
                             text=[f" {label_name}: {ceil_2(curr_pt['speed_kmh']):.2f} km/h"],
-                            textposition="top right"
+                            textfont=dict(size=marker_font_size, color=color),
+                            textposition=pos_str, showlegend=False
                         ))
-                    frames.append(go.Frame(data=frame_data, name=str(f_idx), traces=initial_animated_indices))
+                        initial_animated_indices.append(base_count + idx)
 
-                fig_map.frames = frames
+                    max_len = max([len(df[df['lap'] == l_id]) for l_id in selected_laps])
+                    frames = []
+                    for f_idx in range(0, max_len, step_stride):
+                        frame_data = []
+                        for idx, lap_id in enumerate(selected_laps):
+                            ldf = df[df['lap'] == lap_id].reset_index(drop=True)
+                            color = colors[idx % len(colors)]
+                            label_name = custom_names.get(lap_id, f"Lap {lap_id}")
+                            pos = min(f_idx, len(ldf) - 1)
+                            curr_pt = ldf.iloc[pos]
+                            ind_off = st.session_state['individual_lap_offsets'].get(lap_id, (0.0, 0.0))
+                            
+                            pos_str = TEXT_POSITIONS[idx % len(TEXT_POSITIONS)]
+                            frame_data.append(go.Scatter(
+                                x=[curr_pt['rot_lon'] + auto_offset_x + ind_off[0]], y=[curr_pt['rot_lat'] + auto_offset_y + ind_off[1]],
+                                mode='markers+text',
+                                marker=dict(size=14, color=color, line=dict(width=2, color='#ffffff')),
+                                text=[f" {label_name}: {ceil_2(curr_pt['speed_kmh']):.2f} km/h"],
+                                textfont=dict(size=marker_font_size, color=color),
+                                textposition=pos_str
+                            ))
+                        frames.append(go.Frame(data=frame_data, name=str(f_idx), traces=initial_animated_indices))
 
-                fig_map.update_layout(
-                    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor=cur_theme['plot_bg'],
-                    font=dict(color=cur_theme['text']), height=680,
-                    xaxis=dict(showgrid=True, gridcolor=cur_theme['grid'], scaleanchor="y", scaleratio=1),
-                    yaxis=dict(showgrid=True, gridcolor=cur_theme['grid']),
-                    margin=dict(l=5, r=5, t=5, b=5),
-                    legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1),
-                    updatemenus=[dict(
-                        type="buttons", showactive=False, x=0.01, y=0.99,
-                        buttons=[
-                            dict(label="PLAY (▶)", method="animate", args=[None, {"frame": {"duration": 50, "redraw": True}, "fromcurrent": True}]),
-                            dict(label="PAUSE (❚❚)", method="animate", args=[[None], {"frame": {"duration": 0, "redraw": False}, "mode": "immediate"}])
-                        ]
-                    )]
-                )
+                    fig.frames = frames
 
+                    if clicked_point is not None:
+                        fig.add_trace(go.Scatter(
+                            x=[clicked_point['rot_lon'] + auto_offset_x], y=[clicked_point['rot_lat'] + auto_offset_y],
+                            mode='markers',
+                            marker=dict(size=18, color='#ffff00', symbol='star', line=dict(width=2, color='#000000')),
+                            name="Selected Point", showlegend=False
+                        ))
+
+                    layout_kwargs = dict(
+                        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor=cur_theme['plot_bg'],
+                        font=dict(color=cur_theme['text']), height=map_height_px if not is_zoomed else 320,
+                        xaxis=dict(showgrid=True, gridcolor=cur_theme['grid'], scaleanchor="y", scaleratio=1),
+                        yaxis=dict(showgrid=True, gridcolor=cur_theme['grid']),
+                        margin=dict(l=5, r=5, t=5, b=5),
+                        legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1),
+                        updatemenus=[dict(
+                            type="buttons", showactive=False, x=0.01, y=0.99,
+                            buttons=[
+                                dict(label="PLAY", method="animate", args=[None, {"frame": {"duration": 50, "redraw": True}, "fromcurrent": True}]),
+                                dict(label="PAUSE", method="animate", args=[[None], {"frame": {"duration": 0, "redraw": False}, "mode": "immediate"}])
+                            ]
+                        )]
+                    )
+
+                    if is_zoomed and target_center is not None:
+                        zoom_span = 0.0006
+                        layout_kwargs["xaxis"]["range"] = [target_center[0] - zoom_span, target_center[0] + zoom_span]
+                        layout_kwargs["yaxis"]["range"] = [target_center[1] - zoom_span, target_center[1] + zoom_span]
+
+                    fig.update_layout(**layout_kwargs)
+                    return fig
+
+                fig_map = build_map_figure(is_zoomed=False)
                 st.plotly_chart(fig_map, use_container_width=True)
 
-            with col_side_laps:
-                st.markdown(f"##### {L['hud_title']}")
-                
-                main_df = df[df['lap'] == main_lap_id].reset_index(drop=True)
-                replay_idx = st.slider(L['seek_time'], 0, len(main_df)-1, 0, 5)
-                
-                for idx, lap_id in enumerate(selected_laps):
-                    row = sum_df[sum_df['Lap'] == lap_id].iloc[0]
-                    color = colors[idx % len(colors)]
-                    label_name = custom_names.get(lap_id, f"Lap {lap_id}")
+            # 超コンパクト2列HUDパネル
+            if not hide_hud_panel and col_trace_half is not None:
+                with col_trace_half:
+                    st.markdown(f"##### {L['hud_title']}")
                     
-                    lap_data = df[df['lap'] == lap_id].reset_index(drop=True)
-                    pos = min(replay_idx, len(lap_data)-1)
-                    sync_pt = lap_data.iloc[pos]
-                    
-                    c_col1, c_col2 = st.columns([2.2, 1])
-                    with c_col1:
-                        st.markdown(f"""
-                        <div class="metric-card" style="border-left: 5px solid {color}; margin-bottom: 6px;">
-                            <div class="metric-title" style="color:{color};">{label_name} <span style="opacity:0.7;">({row['StartTime']})</span></div>
-                            <div class="metric-value" style="color:{color};">[{row['LapTime']}]</div>
-                            <div class="metric-unit">{ceil_2(sync_pt['speed_kmh']):.2f} km/h (傾き {sync_pt['lean_angle_deg']:.1f}°)</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    with c_col2:
-                        if bike_pil:
-                            rot_bike = render_rotated_bike_image(bike_pil, sync_pt['lean_angle_deg'])
-                            st.image(rot_bike, width=70)
+                    hud_cols = st.columns(2)
+                    for idx, lap_id in enumerate(selected_laps):
+                        row = sum_df[sum_df['Lap'] == lap_id].iloc[0]
+                        color = colors[idx % len(colors)]
+                        label_name = custom_names.get(lap_id, f"Lap {lap_id}")
+                        
+                        lap_data = df[df['lap'] == lap_id].reset_index(drop=True)
+                        sync_pt = lap_data.iloc[0]
+                        lean_deg = sync_pt['lean_angle_deg'] if 'lean_angle_deg' in sync_pt else 0.0
+                        
+                        target_col = hud_cols[idx % 2]
+                        with target_col:
+                            st.markdown(f"""
+                            <div class="metric-card-slim" style="border-left: 3px solid {color}; margin-bottom: 3px;">
+                                <div class="metric-title-slim" style="color:{color};">{label_name}</div>
+                                <div class="metric-value-slim" style="color:{color};">[{row['LapTime']}]</div>
+                                <div class="metric-unit-slim">{ceil_2(sync_pt['speed_kmh']):.1f}k ({lean_deg:.0f}°)</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                            if st.button("キープ", key=f"keep_lap_{lap_id}"):
+                                keep_name = f"Lap {lap_id} [{row['LapTime']}] ({row['StartTime']})"
+                                st.session_state['saved_kept_laps'][keep_name] = lap_data
+                                st.success("保存完了")
 
-                st.markdown("<br>", unsafe_allow_html=True)
-
-                if sub_lap_id:
-                    sub_row = sum_df.loc[sum_df['Lap']==sub_lap_id].iloc[0]
-                    sub_color = colors[1 % len(colors)]
-                    st.markdown(f"##### {L['sub_compare']}: <span style='color:{sub_color};'>{custom_names.get(sub_lap_id, f'Lap {sub_lap_id}')} [{sub_row['LapTime']}]({sub_row['StartTime']}){sub_row['MaxSpeed']:.2f}km/h</span>", unsafe_allow_html=True)
-                    sub_df = df[df['lap'] == sub_lap_id].reset_index(drop=True)
-                    
-                    fig_sub = go.Figure()
-                    fig_sub.add_trace(go.Scatter(
-                        x=sub_df['rot_lon'], y=sub_df['rot_lat'],
-                        mode='lines', line=dict(width=2.5, color=sub_color)
-                    ))
-                    
-                    fig_sub.update_layout(
-                        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor=cur_theme['plot_bg'],
-                        font=dict(color=cur_theme['text']), height=180,
-                        xaxis=dict(showgrid=False, visible=False, scaleanchor="y", scaleratio=1),
-                        yaxis=dict(showgrid=False, visible=False),
-                        margin=dict(l=2, r=2, t=2, b=2), showlegend=False
-                    )
-                    st.plotly_chart(fig_sub, use_container_width=True)
-
+            # -----------------------------------------------------------------
+            # 8. 車速・デルタトレース ＆ G-G Diagram ＆ 詳細分析レポート
+            # -----------------------------------------------------------------
             st.markdown(f"### {L['speed_traces']}")
             fig_speed = go.Figure()
             
@@ -933,6 +1147,117 @@ if df is not None and not df.empty and 'lat' in df.columns:
             )
             st.plotly_chart(fig_speed, use_container_width=True)
 
+            col_delta_half, col_gg_half = st.columns([1.0, 1.0])
+
+            with col_delta_half:
+                st.markdown(f"### {L['delta_traces']}")
+                fig_delta = go.Figure()
+                
+                best_lap_df = df[df['lap'] == best_lap_id].reset_index(drop=True)
+                best_cum_time = np.arange(len(best_lap_df)) * 0.05
+                best_cum_dist = np.cumsum(best_lap_df['speed_kmh'] / 3.6 * 0.05)
+
+                for idx, lap_id in enumerate(selected_laps):
+                    lap_data = df[df['lap'] == lap_id].reset_index(drop=True)
+                    color = colors[idx % len(colors)]
+                    label_name = custom_names.get(lap_id, f"Lap {lap_id}")
+                    
+                    lap_cum_dist = np.cumsum(lap_data['speed_kmh'] / 3.6 * 0.05)
+                    lap_cum_time = np.arange(len(lap_data)) * 0.05
+                    
+                    interp_best_time = np.interp(lap_cum_dist, best_cum_dist, best_cum_time)
+                    delta_sec = lap_cum_time - interp_best_time
+                    
+                    fig_delta.add_trace(go.Scatter(
+                        x=lap_cum_dist, y=delta_sec,
+                        mode='lines', name=f"{label_name} Delta",
+                        line=dict(width=2.0, color=color),
+                        hovertemplate="距離: %{x:.1f}m | タイム差: %{y:+.3f}秒<extra></extra>"
+                    ))
+
+                fig_delta.add_shape(type="line", x0=0, y0=0, x1=max(best_cum_dist), y1=0, line=dict(color=cur_theme['text'], width=1, dash="dash"))
+                fig_delta.update_layout(
+                    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor=cur_theme['plot_bg'],
+                    font=dict(color=cur_theme['text']), height=280,
+                    xaxis=dict(title=L['dist_m'], showgrid=True, gridcolor=cur_theme['grid']),
+                    yaxis=dict(title="Delta (sec)", showgrid=True, gridcolor=cur_theme['grid']),
+                    margin=dict(l=10, r=10, t=10, b=10)
+                )
+                st.plotly_chart(fig_delta, use_container_width=True)
+
+            with col_gg_half:
+                st.markdown(f"### {L['gg_diagram']}")
+                fig_gg = go.Figure()
+                
+                for idx, lap_id in enumerate(selected_laps):
+                    lap_data = df[df['lap'] == lap_id].reset_index(drop=True)
+                    color = colors[idx % len(colors)]
+                    label_name = custom_names.get(lap_id, f"Lap {lap_id}")
+                    
+                    fig_gg.add_trace(go.Scatter(
+                        x=lap_data['cornering_g'], y=lap_data['accel_g'],
+                        mode='markers', name=label_name,
+                        marker=dict(size=4, color=color, opacity=0.6),
+                        hovertemplate="横G: %{x:+.2f}G | 縦G: %{y:+.2f}G<extra></extra>"
+                    ))
+
+                theta = np.linspace(0, 2*np.pi, 100)
+                fig_gg.add_trace(go.Scatter(
+                    x=1.0*np.cos(theta), y=1.0*np.sin(theta),
+                    mode='lines', name="1.0G Limit Circle",
+                    line=dict(color=cur_theme['text'], dash="dash", width=1.5),
+                    showlegend=False, hoverinfo='skip'
+                ))
+
+                fig_gg.update_layout(
+                    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor=cur_theme['plot_bg'],
+                    font=dict(color=cur_theme['text']), height=280,
+                    xaxis=dict(title="横G (コーナリングG)", showgrid=True, gridcolor=cur_theme['grid'], range=[-1.5, 1.5]),
+                    yaxis=dict(title="縦G (加減速G)", showgrid=True, gridcolor=cur_theme['grid'], range=[-1.5, 1.5]),
+                    margin=dict(l=10, r=10, t=10, b=10)
+                )
+                st.plotly_chart(fig_gg, use_container_width=True)
+
+            st.markdown(f"### {L['sector_analysis']}")
+            sec_rows = []
+            for lap_id in selected_laps:
+                ldf = df[df['lap'] == lap_id].reset_index(drop=True)
+                n_pts = len(ldf)
+                s1_df = ldf.iloc[:n_pts//3]
+                s2_df = ldf.iloc[n_pts//3 : 2*n_pts//3]
+                s3_df = ldf.iloc[2*n_pts//3:]
+                
+                s1_t = len(s1_df) * 0.05
+                s2_t = len(s2_df) * 0.05
+                s3_t = len(s3_df) * 0.05
+                
+                brake_pct = (len(ldf[ldf['pedal_status'] == 'Braking']) / n_pts) * 100.0
+                accel_pct = (len(ldf[ldf['pedal_status'] == 'Accel']) / n_pts) * 100.0
+                
+                sec_rows.append({
+                    "Lap": custom_names.get(lap_id, f"Lap {lap_id}"),
+                    "S1 (秒)": f"{s1_t:.3f}",
+                    "S2 (秒)": f"{s2_t:.3f}",
+                    "S3 (秒)": f"{s3_t:.3f}",
+                    "Total (秒)": f"{(s1_t+s2_t+s3_t):.3f}",
+                    "Max Speed": f"{ldf['speed_kmh'].max():.2f} km/h",
+                    "Bottom Speed": f"{ldf['speed_kmh'].min():.2f} km/h",
+                    "Accel率 (%)": f"{accel_pct:.1f}%",
+                    "Brake率 (%)": f"{brake_pct:.1f}%",
+                    "Max Lean": f"{ldf['lean_angle_deg'].abs().max():.1f}°"
+                })
+            
+            report_df = pd.DataFrame(sec_rows)
+            st.dataframe(report_df, use_container_width=True)
+
+            csv_report_bytes = report_df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
+            st.download_button(
+                label=L['report_export'],
+                data=csv_report_bytes,
+                file_name="circuit_analysis_report.csv",
+                mime="text/csv"
+            )
+
             current_settings = {
                 "rotation_angle": rotation_angle,
                 "bg_offset_x_int": bg_offset_x_int,
@@ -954,6 +1279,31 @@ if df is not None and not df.empty and 'lat' in df.columns:
                 mime="application/json",
                 data=json_string
             )
+
+elif pth_paths:
+    st.info("コース形状データ (.pth) が読み込まれました。")
+    all_pth_pts = pd.concat(pth_paths, ignore_index=True)
+    c_lat, c_lon = all_pth_pts['lat'].mean(), all_pth_pts['lon'].mean()
+    
+    fig_pth_only = go.Figure()
+    pth_width = max(1.0, auto_track_width / 2.0)
+    for pth_df in pth_paths:
+        pth_df['rot_lat'], pth_df['rot_lon'] = rotate_coordinates(pth_df, rotation_angle, c_lat, c_lon)
+        fig_pth_only.add_trace(go.Scatter(
+            x=pth_df['rot_lon'] + auto_offset_x,
+            y=pth_df['rot_lat'] + auto_offset_y,
+            mode='lines', name="PTH Circuit Boundary",
+            line=dict(width=pth_width, color=cur_theme['pth_line']),
+            hoverinfo='skip', showlegend=False
+        ))
+    fig_pth_only.update_layout(
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor=cur_theme['plot_bg'],
+        font=dict(color=cur_theme['text']), height=map_height_px,
+        xaxis=dict(showgrid=False, visible=False, scaleanchor="y", scaleratio=1),
+        yaxis=dict(showgrid=False, visible=False),
+        margin=dict(l=5, r=5, t=5, b=5)
+    )
+    st.plotly_chart(fig_pth_only, use_container_width=True)
 
 else:
     st.info(L['drop_info'])
